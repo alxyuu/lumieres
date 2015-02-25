@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head>
+    <title>lumieres</title>
+    <script src="//code.jquery.com/jquery-2.1.0.min.js" type="text/javascript"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/raphael/2.1.2/raphael-min.js" type="text/javascript"></script>
+    <script src="./colorwheel.js" type="text/javascript"></script>
+    <script src="https://cdn.socket.io/socket.io-1.2.0.js"></script>
+  </head>
+  <body>
+    <div id="colorwheel" style="float:left; margin-right:20px; width:300px; text-align:left;"></div>
+    <script>
+        var socket = io();
+        var cw = Raphael.colorwheel($("#colorwheel")[0],150);
+        cw.color("#F00");
+
+        cw.onchange(function(color) {
+            var colors = [parseInt(color.r), parseInt(color.g), parseInt(color.b)]
+            socket.emit('selectColor', colors);
+        });
+    </script>
+  </body>
+</html>
