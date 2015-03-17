@@ -1,19 +1,27 @@
 var dgram = require('dgram');
-var Color = require('./Color.js');
 
-function Strip(address, ledCount) {
+function Strip(address, ledCount, inverted) {
     var me = new Object();
     me.address = address;
     me.ledCount = ledCount;
     me.lastConfiguration = [];
+    me.isInverted = inverted ? true : false;
     me.socket = dgram.createSocket("udp4");
     
     for (var i = 0; i < me.ledCount; i++) {
-        me.lastConfiguration[i] = Color.getColor(0, 0, 0);
+        me.lastConfiguration[i] = [0, 0, 0];
     }
     
+    this.getLedCount = function() {
+        return me.ledCount;
+    };
+
     this.getLastConfiguration = function() {
         return me.lastConfiguration;
+    };
+    
+    this.getIsInverted = function() {
+        return me.isInverted;
     };
     
     this.show = function(configuration) {
@@ -23,16 +31,16 @@ function Strip(address, ledCount) {
         } else if (configuration.length < me.ledCount) {
             console.log("Received too few lights for configuration, padding.");
             for(var i = configuration.length; i < me.ledCount; i++) {
-                configuration[i] = Color.getColor(0, 0, 0);
+                configuration[i] = [0, 0, 0];
             }
         }
         
         var buffer = new Buffer(3 * me.ledCount);
         
         configuration.forEach( function(color, index) {
-            buffer[index*3 + 0] = color.getGreen();
-            buffer[index*3 + 1] = color.getRed();
-            buffer[index*3 + 2] = color.getBlue();
+            buffer[index*3 + 0] = color[1];
+            buffer[index*3 + 1] = color[0];
+            buffer[index*3 + 2] = color[2];
         } );
             
         me.socket.send(
@@ -57,15 +65,15 @@ function Strip(address, ledCount) {
     
     this.fillColorWithTransition = function(color) {
         var oldColors = this.getLastConfiguration();
-        var totalFrames = 100.0;
+        var totalFrames = 60.0;
         for (var frame = 1; frame < totalFrames + 1; frame++) {
             var configuration = [];
             for (var i = 0; i < me.ledCount; i++) {
-                configuration[i] = Color.getColor(
-                    Math.round(oldColors[i].getRed() + (color.getRed() - oldColors[i].getRed()) * frame/totalFrames),
-                    Math.round(oldColors[i].getGreen() + (color.getGreen() - oldColors[i].getGreen()) * frame/totalFrames),
-                    Math.round(oldColors[i].getBlue() + (color.getBlue() - oldColors[i].getBlue()) * frame/totalFrames)
-                );
+                configuration[i] = [
+                    Math.round(oldColors[i][0] + (color[0] - oldColors[i][0]) * frame/totalFrames),
+                    Math.round(oldColors[i][1] + (color[1] - oldColors[i][1]) * frame/totalFrames),
+                    Math.round(oldColors[i][2] + (color[2] - oldColors[i][2]) * frame/totalFrames)
+                ];
             }
             this.show(configuration);
         }

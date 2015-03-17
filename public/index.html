@@ -6,18 +6,677 @@
     <script src="//cdnjs.cloudflare.com/ajax/libs/raphael/2.1.2/raphael-min.js" type="text/javascript"></script>
     <script src="./colorwheel.js" type="text/javascript"></script>
     <script src="https://cdn.socket.io/socket.io-1.2.0.js"></script>
+    <script src="js/audioRecorder.js"></script>
+    <script src="js/callbackManager.js"></script>
+    <style type="text/css">
+        body {
+            background-color: #000;
+        }
+        #controls {
+            position: absolute;
+            right: 0px;
+        }
+        #audioDebug {
+            position:absolute;
+            background-color: #000;
+            width: calc(100% - 420px);
+            height: calc(100% - 20px);
+        }
+    </style>
   </head>
   <body>
-    <div id="colorwheel" style="float:left; margin-right:20px; width:300px; text-align:left;"></div>
+    <div id="controls">
+        <div id="colorwheel"></div>
+        <button id="toggle" onclick="toggleMusic();">Toggle Musical Lights</button>
+    </div>
+    <canvas id="audioDebug" width=1500 height=945></canvas>
     <script>
         var socket = io();
-        var cw = Raphael.colorwheel($("#colorwheel")[0],150);
-        cw.color("#F00");
-
-        cw.onchange(function(color) {
-            var colors = [parseInt(color.r), parseInt(color.g), parseInt(color.b)]
+        var cw = Raphael.colorwheel($("#colorwheel")[0],400);
+        cw.color("#ffa828");
+        var lastMessage = "";
+        var lightsOn = false;
+    
+        var selectColor = function(color) {
+            var colors = [parseInt(color.r), parseInt(color.g), parseInt(color.b)];
             socket.emit('selectColor', colors);
+            lightsOn = true;
+        }
+        
+        cw.onchange(selectColor);
+/*
+        // These will be initialized later
+      var recognizer, recorder, callbackManager, audioContext;
+      // Only when both recorder and recognizer do we have a ready application
+      var recorderReady = recognizerReady = false;
+
+      // A convenience function to post a message to the recognizer and associate
+      // a callback to its response
+      function postRecognizerJob(message, callback) {
+        var msg = message || {};
+        if (callbackManager) msg.callbackId = callbackManager.add(callback);
+        if (recognizer) recognizer.postMessage(msg);
+      };
+
+      // This function initializes an instance of the recorder
+      // it posts a message right away and calls onReady when it
+      // is ready so that onmessage can be properly set
+      function spawnWorker(workerURL, onReady) {
+          recognizer = new Worker(workerURL);
+          recognizer.onmessage = function(event) {
+            onReady(recognizer);
+          };
+          recognizer.postMessage('');
+      };
+
+      // To display the hypothesis sent by the recognizer
+      function updateCount(count) {
+        if (count != lastMessage) {
+            if (lightsOn) {
+                socket.emit('transitionColor', [0, 0, 0]);
+                lightsOn = false;
+            } else {
+                var color = cw.color();
+                var colors = [parseInt(color.r), parseInt(color.g), parseInt(color.b)];
+                socket.emit('transitionColor', colors);
+                lightsOn = true;
+            }
+        }
+        console.log(count);
+        lastMessage = count;
+      };
+
+      // Callback function once the user authorises access to the microphone
+      // in it, we instanciate the recorder
+      function startUserMedia(stream) {
+        var input = audioContext.createMediaStreamSource(stream);
+        // Firefox hack https://support.mozilla.org/en-US/questions/984179
+        window.firefox_audio_hack = input; 
+        var audioRecorderConfig = {errorCallback: function(x) {console.log("Error from recorder: " + x);}};
+        recorder = new AudioRecorder(input, audioRecorderConfig);
+        // If a recognizer is ready, we pass it to the recorder
+        if (recognizer) recorder.consumers = [recognizer];
+        recorderReady = true;
+        console.log("Audio recorder ready");
+        startRecording();
+      };
+
+      // This starts recording. We first need to get the id of the keyword search to use
+      var startRecording = function() {
+        recorder.start(0);
+      };
+
+      // Stops recording
+      var stopRecording = function() {
+        recorder && recorder.stop();
+      };
+
+      // Called once the recognizer is ready
+      // We then add the grammars to the input select tag and update the UI
+      var recognizerReady = function() {
+           recognizerReady = true;
+           console.log("Recognizer ready");
+      };
+
+      // This adds a keyword search from the array
+      // We add them one by one and call it again as
+      // a callback.
+      // Once we are done adding all grammars, we can call
+      // recognizerReady()
+      var feedKeyword = function(g, index, id) {
+        if (id && (keywordIds.length > 0)) keywordIds[0].id = id.id;
+        if (index < g.length) {
+          keywordIds.unshift({title: g[index].title})
+	  postRecognizerJob({command: 'addKeyword', data: g[index].g},
+                             function(id) {feedKeyword(keywords, index + 1, {id:id});});
+        } else {
+          recognizerReady();
+        }
+      };
+
+      // This adds words to the recognizer. When it calls back, we add grammars
+      var feedWords = function(words) {
+           postRecognizerJob({command: 'addWords', data: words},
+                        function() {feedKeyword(keywords, 0);});
+      };
+
+      // This initializes the recognizer. When it calls back, we add words
+      var initRecognizer = function() {
+          // You can pass parameters to the recognizer, such as : {command: 'initialize', data: [["-hmm", "my_model"], ["-fwdflat", "no"]]}
+          postRecognizerJob({command: 'initialize', data: [["-kws_threshold", "2"]]},
+                            function() {
+                                        if (recorder) recorder.consumers = [recognizer];
+                                        feedWords(wordList);});
+      };
+
+      // When the page is loaded, we spawn a new recognizer worker and call getUserMedia to
+      // request access to the microphone
+      window.onload = function() {
+        console.log("Initializing web audio and speech recognizer, waiting for approval to access the microphone");
+        callbackManager = new CallbackManager();
+        spawnWorker("js/recognizer.js", function(worker) {
+            // This is the onmessage function, once the worker is fully loaded
+            worker.onmessage = function(e) {
+                // This is the case when we have a callback id to be called
+                if (e.data.hasOwnProperty('id')) {
+                  var clb = callbackManager.get(e.data['id']);
+                  var data = {};
+                  if ( e.data.hasOwnProperty('data')) data = e.data.data;
+                  if(clb) clb(data);
+                }
+                // This is a case when the recognizer has a new count number
+                if (e.data.hasOwnProperty('hyp')) {
+                  var newCount = e.data.hyp;
+                  if (e.data.hasOwnProperty('final') &&  e.data.final) newCount = "Final: " + newCount;
+                  updateCount(newCount);
+                }
+                // This is the case when we have an error
+                if (e.data.hasOwnProperty('status') && (e.data.status == "error")) {
+                  console.log("Error in " + e.data.command + " with code " + e.data.code);
+                }
+            };
+            // Once the worker is fully loaded, we can call the initialize function
+            initRecognizer();
         });
+
+        // The following is to initialize Web Audio
+        try {
+          window.AudioContext = window.AudioContext || window.webkitAudioContext;
+          navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+          window.URL = window.URL || window.webkitURL;
+          audioContext = new AudioContext();
+        } catch (e) {
+          console.log("Error initializing Web Audio browser");
+        }
+        if (navigator.getUserMedia) navigator.getUserMedia({audio: true}, startUserMedia, function(e) {
+                                        console.log("No live audio input in this browser");
+                                    });
+        else console.log("No web audio support in this browser");
+      };
+
+       // This is the list of words that need to be added to the recognizer
+       // This follows the CMU dictionary format
+      var wordList = [["LIGHT-SWITCH", "L AY T S W IH CH"]];
+      var keywords = [{title: "LIGHT-SWITCH", g: "LIGHT-SWITCH"}];
+      var keywordIds = [];
+*/
+    var debugW = 1500;
+	var debugH = 945;
+    var chartW = 1350;
+	var chartH = 945;
+	var aveBarWidth = 150;
+	var debugSpacing = 10;
+    
+    var canvas = document.getElementById("audioDebug");
+		debugCtx = canvas.getContext('2d');
+		debugCtx.width = debugW;
+		debugCtx.height = debugH;
+		debugCtx.fillStyle = "rgb(40, 40, 40)";
+		debugCtx.lineWidth=2;
+		debugCtx.strokeStyle = "rgb(255, 255, 255)";
+        
+    var gradient = debugCtx.createLinearGradient(0,0,0,945);
+		gradient.addColorStop(1,'#330000');
+		gradient.addColorStop(0.75,'#aa0000');
+		gradient.addColorStop(0.5,'#aaaa00');
+		gradient.addColorStop(0,'#aaaaaa');
+
+    var numLights = 338;
+    numLights = 466;
+    var lastUpdate = new Date().getTime();
+    
+    function getFullBrightnessRandomColor() {
+        var red = Math.round(Math.random() * 255);
+        var green = Math.round(Math.random() * 255);
+        var blue = Math.round(Math.random() * 255);
+        
+        var maxColor = Math.max(red, Math.max(green, blue));
+        var scale = 255.0/maxColor;
+        
+        return [Math.round(scale * red), Math.round(scale * green), Math.round(scale * blue)];
+    }
+    
+    function getRandomStripIndex() {
+        var random = Math.random() * 5;
+        if (random < 1) {
+            return [0, 95];
+        } else if (random < 2) {
+            return [95, 154];
+        } else if (random < 3) {
+            return [154, 195];
+        } else if (random < 4) {
+            return [195, 301];
+        } else {
+            return [301, 338];
+        }
+    }
+    
+    function WhiteLightEffect() {
+        this.frame = 0;
+        this.endFrame = 10;
+        this.applyEffect = function(configuration) {
+            var intensity = Math.cos(this.frame*Math.PI/20);
+            for (var i = 0; i < numLights; i++) {
+                transitionConfiguration(configuration, i, intensity, [255, 255, 255]);
+            }
+            this.frame++;
+            return this.frame < this.endFrame;
+        };
+    }
+    
+    function CornerEffect() {
+        this.color = [Math.round(Math.random() * 255), Math.round(Math.random() * 255), Math.round(Math.random() * 255)];
+        this.frame = 0;
+        this.endFrame = 35;
+        this.applyEffect = function(configuration) {
+            if (this.frame < 25) {
+                for (var i = 44; i > 43 - this.frame * 2 && i >= 0; i--) {
+                    configuration[i] = this.color;
+                }
+                for (var i = 45; i < 46 + this.frame * 2; i++) {
+                    configuration[i] = this.color;
+                }
+            } else {
+                var intensity =  (this.endFrame - this.frame) / 10.0;
+                for (var i = 0; i < 95; i++) {
+                    transitionConfiguration(configuration, i, intensity, this.color);
+                }
+            }
+            this.frame++;
+            return this.frame < this.endFrame;
+        };
+    }
+    
+    function StreamEffect() {
+        this.frame = 0;
+        this.endFrame = 52
+        
+        this.reversed = false;
+        if (Math.random() < 0.5) {
+            this.reversed = true;
+        }
+        
+        this.applyEffect = function(configuration) {
+            var counter = this.reversed ? this.endFrame - this.frame : this.frame;
+            for (var i = counter*4 - 15; i < counter*4 + 5; i++) {
+                if (i > 0 && i < 195) {
+                    var max = Math.max(configuration[i][0], Math.max(configuration[i][1], configuration[i][2]));
+                    if (max > 0) {
+                        var scale = 255.0/max;
+                        configuration[i] = [
+                            Math.round((configuration[i][0] * scale * 4 + 255) / 5),
+                            Math.round((configuration[i][1] * scale * 4 + 255) / 5),
+                            Math.round((configuration[i][2] * scale * 4 + 255) / 5)
+                        ];
+                    } else {
+                        configuration[i] = [210, 210, 210];
+                    }
+                }
+            }
+            this.frame++;
+            return this.frame < this.endFrame;
+        };
+    }
+    
+    function SizzleEffect() {
+        this.frame = 0;
+        this.endFrame = 60;
+        this.applyEffect = function(configuration) {
+            if (this.frame < 10) {
+                for (var i = 0; i < numLights; i++) {
+                    configuration[i] = [255, 255, 255];
+                }
+            } else {
+                for (var i = 0; i< numLights; i++) {
+                    if (Math.random() > (this.frame - 10)/50.0) {
+                        configuration[i] = [255, 255, 255];
+                    }
+                }
+            }
+            this.frame++;
+            return this.frame < this.endFrame;
+        };
+    }
+    
+    function NoEffect() {
+        this.frame = 0;
+        this.endFrame = 0;
+        this.applyEffect = function(configuration) {
+            return false;
+        };
+    }
+    
+    function ChainedEffect(effect1, effect2) {
+        this.frame = 0;
+        this.endFrame = effect1.endFrame + effect2.endFrame;
+        this.firstEffectComplete = false;
+        this.secondEffectComplete = false;
+        this.applyEffect = function(configuration, isBeat) {
+            this.firstEffectComplete = this.firstEffectComplete || !effect1.applyEffect(configuration, isBeat);
+            if (this.firstEffectComplete) {
+                this.secondEffectComplete = this.secondEffectComplete || !effect2.applyEffect(configuration, isBeat);
+            }
+            this.frame++;
+            return !this.secondEffectComplete;
+        };
+    }
+    
+    function ParallelEffect(effect1, effect2) {
+        this.frame = 0;
+        this.endFrame = Math.max(effect1.endFrame, effect2.endFrame + 5);
+        this.firstEffectComplete = false;
+        this.secondEffectComplete = false;
+        this.applyEffect = function(configuration, isBeat) {
+            this.firstEffectComplete = this.firstEffectComplete || !effect1.applyEffect(configuration, isBeat);
+            if (this.frame > 5) {
+                this.secondEffectComplete = this.secondEffectComplete || !effect2.applyEffect(configuration, isBeat);
+            }
+            this.frame++;
+            return !(this.firstEffectComplete && this.secondEffectComplete);
+        };
+    }
+    
+    function BeatEffect() {
+        this.beatNum = 0;
+        this.numBeats = Math.round(Math.random() * 4) + 4;
+        
+        this.frame = 0;
+        this.endFrame = 1000;
+        
+        this.beatFrame = [];
+        this.beatIndexes = [];
+        this.beatColors = [];
+        
+        for (var i = 0; i < this.numBeats; i++) {
+            this.beatFrame[i] = 0;
+            this.beatIndexes[i] = getRandomStripIndex();
+            this.beatColors[i] = getFullBrightnessRandomColor();
+        }
+        
+        this.applyEffect = function(configuration, isBeat) {
+            if (isBeat) this.beatNum++;
+            
+            for (var j = 0; j < this.numBeats; j++) {
+                if (this.beatNum > j && this.beatFrame[j] < 5) {
+                    var intensity = Math.cos(this.beatFrame[j]*Math.PI/10.0);
+                    for (var i = this.beatIndexes[j][0]; i < this.beatIndexes[j][1]; i++) {
+                        transitionConfiguration(configuration, i, intensity, this.beatColors[j]);
+                    }
+                    this.beatFrame[j]++;
+                }
+            }
+            this.frame++;
+            return this.beatFrame[this.numBeats - 1] < 5;
+        };
+    }
+    
+    function CeilingScanEffect() {
+        this.frame = 0;
+        this.endFrame = 50;
+        this.reverse = Math.random() < 0.5 ? true : false;
+        
+        this.applyEffect = function(configuration) {
+            for (var i = 0; i < 20; i++) {
+                var intensity = (i+1)/20.0;
+                if (this.frame > 40) intensity *= (this.endFrame - this.frame) / 10.0;
+                var position = this.reverse ? ((this.endFrame - this.frame)*4) - i + 106 : (this.frame*4) + i;
+                transitionConfiguration(configuration, 195 + position % 106, intensity, [255, 255, 255]);
+            }
+            this.frame++;
+            return this.frame < this.endFrame;
+        };
+    }
+
+    function CeilingRainbowEffect() {
+        this.frame = 0;
+        this.endFrame = 60;
+        
+        this.applyEffect = function(configuration) {
+            var intensity = this.frame > 50 ? (this.endFrame - this.frame) / 10.0 : 1;
+            for (var i = 0; i < 106; i++) {
+                transitionConfiguration(configuration, 195 + i, intensity, [
+                    Math.floor(Math.sin(0.058 * (this.frame*5+i) + 0) * 127 + 128),
+                    Math.floor(Math.sin(0.058 * (this.frame*5+i) + 2) * 127 + 128),
+                    Math.floor(Math.sin(0.058 * (this.frame*5+i) + 4) * 127 + 128)
+                ]);
+            }
+            this.frame++;
+            return this.frame < this.endFrame;
+        };
+    }
+
+    function transitionConfiguration(configuration, index, intensity, value) {
+        configuration[index] = [
+            Math.round(intensity * (value[0] - configuration[index][0]) + configuration[index][0]),
+            Math.round(intensity * (value[1] - configuration[index][1]) + configuration[index][1]),
+            Math.round(intensity * (value[2] - configuration[index][2]) + configuration[index][2]),
+        ];
+    }
+    
+    function getRandomEffect(chainLevel) {
+        chainLevel = chainLevel || 1;
+        var random = Math.random() * ( chainLevel < 5 ? 11 : 7);
+        if (random < 1) {
+            return new WhiteLightEffect();
+        } else if (random < 2) {
+            return new CornerEffect();
+        } else if (random < 2.6) {
+            return new CeilingScanEffect();
+        } else if (random < 3) {
+            return new CeilingRainbowEffect();
+        } else if (random < 4.2) {
+            return new StreamEffect();
+        } else if (random < 4.4) {
+            return new SizzleEffect();
+        } else if (random < 6) {
+            return new BeatEffect();
+        } else if (random < 7) {
+            return new NoEffect();
+        } else if (random < 9) {
+            return new ChainedEffect(getRandomEffect(chainLevel + 1), getRandomEffect(chainLevel + 1));
+        } else {
+            return new ParallelEffect(getRandomEffect(chainLevel + 1), getRandomEffect(chainLevel + 1));
+        }
+    }
+    
+    var audioContext;
+    var source;
+    var analyser;
+    var microphone;
+    var freqByteData;
+    var level = 0;
+    var levelsData = [];
+    var levelsCount = 16;
+    var binCount;
+    var levelBins;
+    var levelHistory = [];
+    var beatTime = 0;
+    var beatCutOff = 0;
+    var BEAT_MIN = 0.08;
+    var frame = 0;
+    var timeout = false;
+    var beatCount = 0;
+    var beatDecay = 0.95;
+    var beatHold = 15;
+    
+    var effects = [];
+    
+    for(var i = 0; i < 256; i++) {
+        levelHistory.push(0);
+    }
+    
+    navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+
+    if (navigator.getUserMedia ) {
+
+        navigator.getUserMedia(
+
+            {audio: true}, 
+
+            function(stream) {
+
+                //reinit here or get an echo on the mic
+                audioContext = new window.AudioContext();
+                source = audioContext.createBufferSource();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 1024;
+                analyser.smoothingTimeConstant = 0.3;
+
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                // console.log("here");
+                freqByteData = new Uint8Array(analyser.frequencyBinCount);
+                binCount = analyser.frequencyBinCount; // = 512
+
+                levelBins = Math.floor(binCount / levelsCount); //number of bins in each level
+                
+                
+            },
+
+            // errorCallback
+            function(err) {
+                alert("The following error occured: " + err);
+            }
+        );
+        
+    }else{
+        alert("Could not getUserMedia");
+    }
+    
+    function update(){
+
+		//GET DATA
+		analyser.getByteFrequencyData(freqByteData); //<-- bar chart
+
+
+		//normalize levelsData from freqByteData
+		for(var i = 0; i < levelsCount; i++) {
+			var sum = 0;
+			for(var j = 0; j < levelBins; j++) {
+				sum += freqByteData[(i * levelBins) + j];
+			}
+			levelsData[i] = sum / levelBins/256 * 1; //gain
+
+			//adjust for the fact that lower levels are percieved more quietly
+			//make lower levels smaller
+			//levelsData[i] *=  1 + (i/levelsCount)/2;
+		}
+		//TODO - cap levels at 1?
+
+		//GET AVG LEVEL
+		var sum = 0;
+		for(var j = 0; j < levelsCount; j++) {
+			sum += levelsData[j];
+		}
+		
+		level = sum / levelsCount;
+
+		levelHistory.push(level);
+		levelHistory.shift(1);
+
+		//BEAT DETECTION
+        var isBeat = false;
+        var intensity;
+		if (level  > beatCutOff && level > BEAT_MIN){
+            isBeat = true;
+			intensity = 1;
+			beatCutOff = level * 1.1;
+			beatTime = 0;
+            beatCount++;
+            if (beatCount % 8 == 0) {
+                effects.push(getRandomEffect());
+            }
+		}else{
+            intensity = (level - 0.15) * 4
+            intensity = Math.min(intensity, 1);
+            intensity = Math.max(intensity, 0);
+			if (beatTime <= beatHold){
+				beatTime ++;
+			}else{
+				beatCutOff *= beatDecay;
+				beatCutOff = Math.max(beatCutOff,BEAT_MIN);
+			}
+		}
+        
+        var color = [
+            Math.floor((Math.sin(0.005 * frame + 0) * 127 + 128) * intensity),
+            Math.floor((Math.sin(0.005 * frame + 2) * 127 + 128) * intensity),
+            Math.floor((Math.sin(0.005 * frame + 4) * 127 + 128) * intensity)
+        ];
+        
+        var configuration = [];
+        for (var i = 0; i < numLights; i++) {
+            configuration.push(color);
+        }
+        
+        for (var i = 0; i < effects.length; i++) {
+            if (!effects[i].applyEffect(configuration, isBeat)) {
+                effects.splice(i, 1);
+                i--;
+            }
+        }
+        
+        socket.emit('setMappedConfiguration', configuration);
+        
+        frame++;
+        
+        debugDraw();
+        
+        var updateTime = new Date().getTime();
+        if (updateTime - lastUpdate > 40) {
+            console.log("Update took too long: " + (updateTime - lastUpdate) + "ms");
+        }
+        lastUpdate = updateTime;
+	}
+    
+    
+    function toggleMusic() {
+        if (!timeout) {
+            $("#colorwheel").hide();
+            lastUpdate = new Date().getTime();
+            timeout = setInterval(update, 30);
+        } else {
+            clearInterval(timeout);
+            effects = [];
+            timeout = false;
+            debugCtx.clearRect(0, 0, debugW, debugH);
+            $("#colorwheel").show();
+            var color = cw.color();
+            var colors = [parseInt(color.r), parseInt(color.g), parseInt(color.b)];
+            socket.emit('transitionColor', colors);
+        }
+    }
+    
+    function debugDraw(){
+
+		debugCtx.clearRect(0, 0, debugW, debugH);
+		//draw chart bkgnd
+		debugCtx.fillStyle = "#000";
+		debugCtx.fillRect(0,0,debugW,debugH);
+
+		//DRAW BAR CHART
+		// Break the samples up into bars
+		var barWidth = chartW / levelsCount;
+		debugCtx.fillStyle = gradient;
+		for(var i = 0; i < levelsCount; i++) {
+			debugCtx.fillRect(i * barWidth, chartH, barWidth - debugSpacing, -levelsData[i]*chartH);
+		}
+
+		//DRAW AVE LEVEL + BEAT COLOR
+		if (beatTime < 6){
+			debugCtx.fillStyle="#FFF";
+		}
+		debugCtx.fillRect(chartW, chartH, aveBarWidth, -level*chartH);
+
+		//DRAW CUT OFF
+		debugCtx.beginPath();
+		debugCtx.moveTo(chartW , chartH - beatCutOff*chartH);
+		debugCtx.lineTo(chartW + aveBarWidth, chartH - beatCutOff*chartH);
+		debugCtx.stroke();
+	}
+
     </script>
+    
+    
   </body>
 </html>
