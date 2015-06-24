@@ -27,13 +27,13 @@
   <body>
     <div id="controls">
         <div id="colorwheel"></div>
+        <button id="toggle" onclick="toggleLights();">Toggle Lights</button>
         <button id="toggle" onclick="toggleMusic();">Toggle Musical Lights</button>
     </div>
     <canvas id="audioDebug" width=1500 height=945></canvas>
     <script>
         var socket = io();
         var cw = Raphael.colorwheel($("#colorwheel")[0],400);
-        cw.color("#ffa828");
         var lastMessage = "";
         var lightsOn = false;
     
@@ -42,6 +42,7 @@
             socket.emit('selectColor', colors);
             lightsOn = true;
         }
+        cw.color("#ffffff");
         
         cw.onchange(selectColor);
 /*
@@ -222,7 +223,6 @@
 		gradient.addColorStop(0,'#aaaaaa');
 
     var numLights = 338;
-    numLights = 466;
     var lastUpdate = new Date().getTime();
     
     function getFullBrightnessRandomColor() {
@@ -249,6 +249,11 @@
         } else {
             return [301, 338];
         }
+    }
+    
+    function getOrderedStripIndex(index) {
+        var indices = [[0, 95], [95, 154], [154, 195], [195, 301], [301, 338]];
+        return indices[index];
     }
     
     function WhiteLightEffect() {
@@ -407,6 +412,115 @@
             }
             this.frame++;
             return this.beatFrame[this.numBeats - 1] < 5;
+        };
+    }
+    
+    function ColorEffect() {
+        this.frame = 0;
+        this.endFrame = Math.round(Math.random() * 200) + 100;
+        
+        this.stripIndex = getRandomStripIndex();
+        this.randomIndex = Math.round(Math.random() * 1257);
+        this.stripColor = [
+            Math.floor((Math.sin(0.005 * this.randomIndex + 0) * 127 + 128)),
+            Math.floor((Math.sin(0.005 * this.randomIndex + 2) * 127 + 128)),
+            Math.floor((Math.sin(0.005 * this.randomIndex + 4) * 127 + 128))
+        ];
+        
+        this.transitionTime = 20.0;
+        
+        this.applyEffect = function(configuration, isBeat, intensity) {
+            var color = this.stripColor.map(function(x) { return x * intensity });
+            
+            if (this.frame < this.transitionTime) {
+                for (var i = this.stripIndex[0]; i < this.stripIndex[1]; i++) {
+                    transitionConfiguration(configuration, i, (this.frame + 1)/this.transitionTime, color);
+                }
+            } else if (this.frame > this.endFrame - this.transitionTime) {
+                for (var i = this.stripIndex[0]; i < this.stripIndex[1]; i++) {
+                    transitionConfiguration(configuration, i, (this.endFrame - this.frame)/this.transitionTime, color);
+                }
+            } else {
+                for (var i = this.stripIndex[0]; i < this.stripIndex[1]; i++) {
+                    configuration[i] = color;
+                }
+            }
+            
+            this.frame++;
+            return this.frame < this.endFrame;
+        };
+    }
+    
+    function ColorScanEffect() {
+        this.transitionTime = 5.0;
+        this.numStrips = 3;
+        
+        this.frame = 0;
+        this.endFrame = this.transitionTime * (2 * this.numStrips + 1);
+
+        this.reversed = Math.random() < 0.5;
+        
+        this.randomIndex = Math.round(Math.random() * 1257);
+        this.stripColor = [
+            Math.floor((Math.sin(0.005 * this.randomIndex + 0) * 127 + 128)),
+            Math.floor((Math.sin(0.005 * this.randomIndex + 2) * 127 + 128)),
+            Math.floor((Math.sin(0.005 * this.randomIndex + 4) * 127 + 128))
+        ];
+        
+        this.transitionTime = 5.0;
+        
+        this.applyEffect = function(configuration, isBeat, intensity) {
+            var color = this.stripColor.map(function(x) { return x * intensity });
+            
+            var counter = this.reversed ? this.frame : this.endFrame - this.frame - 1;
+            
+            if (counter < this.transitionTime) {
+                var stripIndex = getOrderedStripIndex(0);
+                for (var i = stripIndex[0]; i < stripIndex[1]; i++) {
+                    transitionConfiguration(configuration, i, (counter + 1)/this.transitionTime, color);
+                }
+            } else if (counter < this.transitionTime*2) {
+                var stripIndex = getOrderedStripIndex(0);
+                for (var i = stripIndex[0]; i < stripIndex[1]; i++) {
+                    configuration[i] = color;
+                }
+            } else if (counter < this.transitionTime*3) {
+                var stripIndex = getOrderedStripIndex(0);
+                for (var i = stripIndex[0]; i < stripIndex[1]; i++) {
+                    transitionConfiguration(configuration, i, (this.transitionTime*3 - counter)/this.transitionTime, color);
+                }
+                stripIndex = getOrderedStripIndex(1);
+                for (var i = stripIndex[0]; i < stripIndex[1]; i++) {
+                    transitionConfiguration(configuration, i, (counter - this.transitionTime*2 + 1)/this.transitionTime, color);
+                }
+            } else if (counter < this.transitionTime*4) {
+                var stripIndex = getOrderedStripIndex(1);
+                for (var i = stripIndex[0]; i < stripIndex[1]; i++) {
+                    configuration[i] = color;
+                }
+            } else if (counter < this.transitionTime*5) {
+                var stripIndex = getOrderedStripIndex(1);
+                for (var i = stripIndex[0]; i < stripIndex[1]; i++) {
+                    transitionConfiguration(configuration, i, (this.transitionTime*5 - counter)/this.transitionTime, color);
+                }
+                stripIndex = getOrderedStripIndex(2);
+                for (var i = stripIndex[0]; i < stripIndex[1]; i++) {
+                    transitionConfiguration(configuration, i, (counter - this.transitionTime*4 + 1)/this.transitionTime, color);
+                }
+            } else if (counter < this.transitionTime*6) {
+                var stripIndex = getOrderedStripIndex(2);
+                for (var i = stripIndex[0]; i < stripIndex[1]; i++) {
+                    configuration[i] = color;
+                }
+            } else {
+                var stripIndex = getOrderedStripIndex(2);
+                for (var i = stripIndex[0]; i < stripIndex[1]; i++) {
+                    transitionConfiguration(configuration, i, (this.transitionTime*7 - counter)/this.transitionTime, color);
+                }
+            }
+            
+            this.frame++;
+            return this.frame < this.endFrame;
         };
     }
     
@@ -585,6 +699,8 @@
             beatCount++;
             if (beatCount % 8 == 0) {
                 effects.push(getRandomEffect());
+                effects.unshift(new ColorEffect());
+                effects.push(new ColorScanEffect());
             }
 		}else{
             intensity = (level - 0.15) * 4
@@ -610,7 +726,7 @@
         }
         
         for (var i = 0; i < effects.length; i++) {
-            if (!effects[i].applyEffect(configuration, isBeat)) {
+            if (!effects[i].applyEffect(configuration, isBeat, intensity)) {
                 effects.splice(i, 1);
                 i--;
             }
@@ -620,7 +736,7 @@
         
         frame++;
         
-        debugDraw();
+        //debugDraw();
         
         var updateTime = new Date().getTime();
         if (updateTime - lastUpdate > 40) {
@@ -628,24 +744,6 @@
         }
         lastUpdate = updateTime;
 	}
-    
-    
-    function toggleMusic() {
-        if (!timeout) {
-            $("#colorwheel").hide();
-            lastUpdate = new Date().getTime();
-            timeout = setInterval(update, 30);
-        } else {
-            clearInterval(timeout);
-            effects = [];
-            timeout = false;
-            debugCtx.clearRect(0, 0, debugW, debugH);
-            $("#colorwheel").show();
-            var color = cw.color();
-            var colors = [parseInt(color.r), parseInt(color.g), parseInt(color.b)];
-            socket.emit('transitionColor', colors);
-        }
-    }
     
     function debugDraw(){
 
@@ -674,7 +772,41 @@
 		debugCtx.lineTo(chartW + aveBarWidth, chartH - beatCutOff*chartH);
 		debugCtx.stroke();
 	}
-
+    
+    function toggleMusic(noTransition) {
+        if (!timeout) {
+            $("#colorwheel").hide();
+            lastUpdate = new Date().getTime();
+            timeout = setInterval(update, 33);
+            lightsOn = true;
+        } else {
+            clearInterval(timeout);
+            effects = [];
+            timeout = false;
+            debugCtx.clearRect(0, 0, debugW, debugH);
+            $("#colorwheel").show();
+            if (!noTransition) {
+                var color = cw.color();
+                var colors = [parseInt(color.r), parseInt(color.g), parseInt(color.b)];
+                socket.emit('transitionColor', colors);
+            }
+        }
+    }
+    
+    function toggleLights() {
+        if (timeout) {
+            toggleMusic(true);
+        }
+        if (lightsOn) {
+            cw.color("#000000");
+            socket.emit('lightsOff');
+            lightsOn = false;
+        } else {
+            socket.emit('lightsOn');
+            lightsOn = true;
+        }
+    }
+    
     </script>
     
     

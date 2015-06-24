@@ -72,7 +72,6 @@ function StripMapper() {
     var me = new Object();
     me.ledStore = [];
     me.ledCount = 0;
-    me.lastConfiguration = [];
     me.frame = 0;
 
     this.getLedCount = function() {
@@ -80,12 +79,22 @@ function StripMapper() {
     };
 
     this.getLastConfiguration = function() {
-        return me.lastConfiguration;
+        var configuration = [];
+        for (var i in me.ledStore) {
+            configuration = configuration.concat(me.ledStore[i].getLastConfiguration());
+        }
+        return configuration;
     };
     
     this.addStrip = function(strip) {
         me.ledStore.push(strip);
         me.ledCount += strip.getLedCount();
+    };
+    
+    this.addStrips = function(strips) {
+        for (var i in strips) {
+            this.addStrip(strips[i]);
+        }
     };
     
     this.show = function(configuration) {
@@ -102,14 +111,9 @@ function StripMapper() {
         var count = 0;
         for (var i in me.ledStore) {
             var currentConfiguration = configuration.slice(count, count + me.ledStore[i].getLedCount());
-            if (me.ledStore[i].getIsInverted()) {
-                currentConfiguration.reverse();
-            }
             me.ledStore[i].show(currentConfiguration);
             count += me.ledStore[i].getLedCount();
         }
-        
-        me.lastConfiguration = configuration;
     };
     
     this.fillColor = function(color) {
@@ -121,20 +125,32 @@ function StripMapper() {
     };
     
     this.fillColorWithTransition = function(color) {
-        var oldColors = this.getLastConfiguration();
-        var totalFrames = 60.0;
-        for (var frame = 1; frame < totalFrames + 1; frame++) {
-            var configuration = [];
-            for (var i = 0; i < me.ledCount; i++) {
-                configuration[i] = [
-                    Math.round(oldColors[i][0] + (color[0] - oldColors[i][0]) * frame/totalFrames),
-                    Math.round(oldColors[i][1] + (color[1] - oldColors[i][1]) * frame/totalFrames),
-                    Math.round(oldColors[i][2] + (color[2] - oldColors[i][2]) * frame/totalFrames)
-                ];
-            }
-            this.show(configuration);
+        var configuration = [];
+        for (var i = 0; i < me.ledCount; i++) {
+            configuration[i] = color;
         }
+        this.transitionConfiguration(configuration);
     };
+    
+    this.transitionConfiguration = function(configuration, frame) {
+        if (!frame) frame = 1;
+
+        var oldColors = this.getLastConfiguration();
+        var totalFrames = 30.0;
+        
+        var newConfiguration = [];
+        for (var i = 0; i < me.ledCount; i++) {
+            newConfiguration[i] = [
+                Math.round(oldColors[i][0] + (configuration[i][0] - oldColors[i][0]) * frame/totalFrames),
+                Math.round(oldColors[i][1] + (configuration[i][1] - oldColors[i][1]) * frame/totalFrames),
+                Math.round(oldColors[i][2] + (configuration[i][2] - oldColors[i][2]) * frame/totalFrames)
+            ];
+        }
+        this.show(newConfiguration);
+        
+        if (frame <= totalFrames)
+            setTimeout(this.transitionConfiguration.bind(this), 30, configuration, frame + 1);
+    }
     
     this.effect = function(frame, context, _me) {
         if (!context) context = this;

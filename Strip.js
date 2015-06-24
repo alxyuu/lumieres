@@ -35,24 +35,47 @@ function Strip(address, ledCount, inverted) {
             }
         }
         
-        var buffer = new Buffer(3 * me.ledCount);
+        var sendFlag = false;
         
-        configuration.forEach( function(color, index) {
-            buffer[index*3 + 0] = color[1];
-            buffer[index*3 + 1] = color[0];
-            buffer[index*3 + 2] = color[2];
-        } );
-            
-        me.socket.send(
-            buffer,
-            0,
-            buffer.length,
-            7777, //replace with config
-            me.address,
-            function(err) {
-                me.lastConfiguration = configuration;
+        if (me.lastConfiguration.length == configuration.length) {
+            sendTest: for (var i = 0; i < configuration.length; i++) {
+                for(var j = 0; j < 3; j++) {
+                    if (me.lastConfiguration[i][j] != configuration[i][j]) {
+                        sendFlag = true;
+                        break sendTest;
+                    }
+                }
             }
-        );
+        } else {
+            sendFlag = true;
+        }
+        
+        if (sendFlag) {
+            if (me.isInverted) {
+                configuration.reverse();
+            }
+            
+            var buffer = new Buffer(3 * me.ledCount);
+            
+            configuration.forEach( function(color, index) {
+                buffer[index*3 + 0] = color[1];
+                buffer[index*3 + 1] = color[0];
+                buffer[index*3 + 2] = color[2];
+            } );
+                
+            me.socket.send(
+                buffer,
+                0,
+                buffer.length,
+                7777, //replace with config
+                me.address,
+                function(err) {
+                    me.lastConfiguration = configuration;
+                }
+            );
+        //} else {
+            //console.log(Date.now() + ": same configuration, skipping");
+        }
     };
     
     this.fillColor = function(color) {
