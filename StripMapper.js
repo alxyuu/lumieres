@@ -72,7 +72,6 @@ function StripMapper() {
     var me = new Object();
     me.ledStore = [];
     me.ledCount = 0;
-    me.frame = 0;
 
     this.getLedCount = function() {
         return me.ledCount;
@@ -170,11 +169,13 @@ function StripMapper() {
         setTimeout(context.effect, 40, frame+1, context, _me);
     };
     
-    this.test = function() {
+    this.test = function(frame) {
+        if (!frame) frame = 0;
+        
         var configuration = [];
         for (var i = 0; i < me.ledCount; i++) {
             //var hex = HSVtoHEX( i*.001 - frame*.001, 1,  ((((i%256) - ((frame>>1)%256)+256)%256) ) /256.0*1.5-0.1);
-            if( me.frame % me.ledCount == i ) {
+            if( frame == i ) {
                 hex = [ 255, 255, 255 ];
             } else {
                 hex = [ 0, 0, 0 ];
@@ -182,7 +183,10 @@ function StripMapper() {
             configuration[i] = [hex[0], hex[1], hex[2]];
         }
         this.show(configuration);
-        me.frame++;
+        
+        if (frame < me.ledCount) {
+            setTimeout(this.test.bind(this), 60, frame + 1);
+        }
     };
 }
 

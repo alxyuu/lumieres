@@ -11,7 +11,7 @@ var strips = [
     new Strip("192.168.2.107", 50),
     new Strip("192.168.2.126", 59, true),
     new Strip("192.168.2.132", 41),
-    new Strip("192.168.2.146", 143)
+    new Strip("192.168.2.146", 104)
 ];
 
 var map = new StripMapper();
@@ -48,7 +48,7 @@ io.on('connection', function(socket) {
   });
   socket.on('lightsOn', function() {
     sideLights.fillColor([0, 0, 0]);
-    mainLights.fillColorWithTransition([255, 255, 255]);
+    mainLights.fillColorWithTransition([255, 205, 156]);
   });
   socket.on('lightsOff', function() {
     map.fillColorWithTransition([0, 0, 0]);
